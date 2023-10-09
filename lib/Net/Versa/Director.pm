@@ -171,7 +171,7 @@ sub get_director_info ($self) {
 
 Returns the Versa Director version.
 
-From L<get_director_info>->{branch}.
+From L</get_director_info>->{branch}.
 
 =cut
 
