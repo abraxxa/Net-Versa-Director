@@ -157,14 +157,13 @@ All API endpoints starting with /vnms return this type of error:
 
 Returns the Versa Director information as hashref.
 
-From /vnms/dashboard/vdStatus/packageInfo.
+From /api/operational/system/package-info.
 
 =cut
 
 sub get_director_info ($self) {
-    return $self->_get('/vnms/dashboard/vdStatus/packageInfo')
-        ->{'versanms.VDStatus'}
-        ->{pkgInfo};
+    return $self->_get('/api/operational/system/package-info')
+        ->{'package-info'}->[0];
 }
 
 =method get_version
