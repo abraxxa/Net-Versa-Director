@@ -14,6 +14,8 @@ use Net::Versa::Director::Serializer;
     use v5.36;
     use Net::Versa::Director;
 
+    # to use the username/password basic authentication
+
     my $director = Net::Versa::Director->new(
         server      => 'https://director.example.com:9182',
         user        => 'username',
@@ -22,6 +24,26 @@ use Net::Versa::Director::Serializer;
             timeout     => 10,
         },
     );
+
+    # OR to use the OAuth token based authentication
+
+    $director = Net::Versa::Director->new(
+        server      => 'https://director.example.com:9183',
+        user        => 'username',
+        passwd      => '$password',
+        clientattrs => {
+            timeout     => 10,
+        },
+    );
+
+    # this is required to fetch the OAuth access and refresh tokens
+    # using the client id and secret passed to user and passwd.
+    $director->login;
+
+    # at the end of your code, possible in an END block to always execute it
+    # after a successful login to not exceed the maximum number of access
+    # tokens.
+    $director->logout;
 
 =head1 DESCRIPTION
 
@@ -45,14 +67,31 @@ has 'passwd' => (
     is  => 'rw',
 );
 
-with 'Role::REST::Client';
+has '_refresh_token' => (
+    isa     => Str,
+    is      => 'rw',
+    clearer => 1,
+);
 
+with 'Role::REST::Client';
 
 has '+serializer_class' => (
     default => sub { 'Net::Versa::Director::Serializer' },
 );
 
 with 'Role::REST::Client::Auth::Basic';
+
+sub _is_oauth ($self) {
+    return $self->server =~ /:9183/;
+}
+
+# has to be after "with 'Role::REST::Client::Auth::Basic';" to be called before
+# its method modifier
+before '_call' => sub ($self, $method, $endpoint, $data, $args) {
+    # disable http basic auth if talking to the OAuth port
+    $args->{authentication} = 'none'
+        if $self->_is_oauth;
+};
 
 has '+persistent_headers' => (
     default => sub {
@@ -78,36 +117,36 @@ sub _error_handler ($self, $res) {
     }
 }
 
-sub _create ($self, $url, $object_data, $query_params = {}, $expected_code = 201) {
+sub _create ($self, $url, $object_data, $query_params = {}, $expected_code = 201, $args = {}) {
     my $params = $self->user_agent->www_form_urlencode( $query_params );
-    my $res = $self->post("$url?$params", $object_data);
+    my $res = $self->post("$url?$params", $object_data, $args);
     $self->_error_handler($res)
         unless $res->code == $expected_code;
 
     return $res->data;
 }
 
-sub _get ($self, $url, $query_params = {}) {
-    my $res = $self->get($url, $query_params);
+sub _get ($self, $url, $query_params = {}, $args = {}) {
+    my $res = $self->get($url, $query_params, $args);
     $self->_error_handler($res)
         unless $res->code == 200;
 
     return $res->data;
 }
 
-sub _update ($self, $url, $object, $object_data, $query_params = {}) {
+sub _update ($self, $url, $object, $object_data, $query_params = {}, $args = {}) {
     my $updated_data = clone($object);
     $updated_data = { %$updated_data, %$object_data };
     my $params = $self->user_agent->www_form_urlencode( $query_params );
-    my $res = $self->put("$url?$params", $updated_data);
+    my $res = $self->put("$url?$params", $updated_data, $args);
     $self->_error_handler($res)
         unless $res->code == 200;
 
     return $res->data;
 }
 
-sub _delete ($self, $url) {
-    my $res = $self->delete($url);
+sub _delete ($self, $url, $args = {}) {
+    my $res = $self->delete($url, undef, $args);
     $self->_error_handler($res)
         unless $res->code == 200;
 
@@ -152,6 +191,50 @@ All API endpoints starting with /vnms return this type of error:
     }
 
 =head1 METHODS
+
+=method login
+
+Takes a client id and secret.
+
+Logs into the Versa Director when using the OAuth token based port 9183.
+
+Sets the Authorization header to the Bearer access token.
+
+Returns a hashref containing the OAuth access- and refresh-tokens.
+
+=cut
+
+sub login ($self, $client_id, $client_secret) {
+    my $login_response = $self->_create('/auth/token', {
+        client_id       => $client_id,
+        client_secret   => $client_secret,
+        username        => $self->user,
+        password        => $self->passwd,
+        grant_type      => "password",
+    }, {}, 200);
+    my $access_token = $login_response->{access_token};
+    $self->set_persistent_header('Authorization', "Bearer $access_token");
+    $self->_refresh_token($login_response->{refresh_token});
+    return $login_response;
+}
+
+=method logout
+
+Revokes the access token if OAuth authentication is used so the maximum number
+of access tokens of the client isn't exceeded.
+
+Returns the response.
+
+=cut
+
+sub logout ($self) {
+    my $res = $self->_create('/auth/revoke', undef, {}, 200);
+
+    $self->_clear_refresh_token;
+    $self->clear_persistent_headers;
+
+    return $res;
+}
 
 =method get_director_info
 
@@ -273,6 +356,18 @@ To run the live API tests the following environment variables need to be set:
 =item NET_VERSA_DIRECTOR_USERNAME
 
 =item NET_VERSA_DIRECTOR_PASSWORD
+
+=item NET_VERSA_DIRECTOR_CLIENT_ID
+
+=item NET_VERSA_DIRECTOR_CLIENT_SECRET
+
+=back
+
+If basic authentication tests should be also run set this additional variable to true.
+
+=over
+
+=item NET_VERSA_DIRECTOR_BASIC_AUTH
 
 =back
 
