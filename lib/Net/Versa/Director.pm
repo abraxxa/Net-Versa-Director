@@ -319,15 +319,16 @@ sub list_assets ($self) {
 
 Takes a device name.
 
-Returns an arrayref of interface hashrefs.
+Returns a hashref of interface types each containing an arrayref of interface
+hashrefs.
 
-From /api/config/devices/device/$devicename/config/interfaces/vni?deep.
+From /api/config/devices/device/$devicename/config/interfaces?deep.
 
 =cut
 
 sub list_device_interfaces ($self, $devicename) {
-    return $self->_get("/api/config/devices/device/$devicename/config/interfaces/vni?deep")
-        ->{vni};
+    return $self->_get("/api/config/devices/device/$devicename/config/interfaces?deep")
+        ->{interfaces};
 }
 
 =method list_device_networks
