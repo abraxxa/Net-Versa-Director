@@ -196,6 +196,9 @@ SKIP: {
             };
             etc();
         }, 'list_device_networks returns arrayref of hashrefs');
+
+    is($director->get_device_configuration($appliance->{name}), match qr/^devices \{/,
+        "get_device_configuration returns current device configuration");
 }
 
 done_testing();

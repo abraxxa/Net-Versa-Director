@@ -346,6 +346,26 @@ sub list_device_networks ($self, $devicename) {
         ->{network};
 }
 
+=method get_device_configuration
+
+Takes a device name.
+
+Returns the current device configuration as string.
+
+From /vnms/appliance/export?applianceName=$devicename.
+
+=cut
+
+sub get_device_configuration ($self, $devicename) {
+    $self->set_header(Accept => 'text/plain');
+    return $self->_get("/vnms/appliance/export",
+        {
+            applianceName           => $devicename,
+        }, {
+            deserializer => undef,
+        });
+}
+
 =head1 TESTS
 
 To run the live API tests the following environment variables need to be set:
