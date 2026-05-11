@@ -53,7 +53,7 @@ basic authentication API endpoint on port 9182.
 Currently it is developed and tested against version 21.2.
 
 For more information see
-L<https://docs.versa-networks.com/Management_and_Orchestration/Versa_Director/Director_REST_APIs/01_Versa_Director_REST_API_Overview>.
+L<https://docs.versa-networks.com/Management_and_Orchestration/Versa_Director/Director_REST_APIs/Versa_Director_REST_API_Overview>.
 
 =cut
 
