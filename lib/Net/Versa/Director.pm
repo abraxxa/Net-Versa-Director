@@ -47,8 +47,7 @@ use Net::Versa::Director::Serializer;
 
 =head1 DESCRIPTION
 
-This module is a client library for the Versa Director REST API using the
-basic authentication API endpoint on port 9182.
+This module is a client library for the Versa Director REST API.
 
 Currently it is developed and tested against version 22.1.4.
 
