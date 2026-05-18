@@ -1,6 +1,8 @@
 Revision history for Net-Versa-Director
 
 {{ $NEXT }}
+
+0.005000  2026-05-18 16:57:39+02:00 Europe/Vienna
     - add get_device_configuration method
     - update link to the Versa REST API docs
     - update note about Versa Director version for development and testing
