@@ -2,16 +2,16 @@ package Net::Versa::Director;
 
 # ABSTRACT: Versa Director REST API client library
 
-use v5.36;
+use v5.38;
 use Moo;
-use feature 'signatures';
+use feature qw( class signatures );
+no warnings 'experimental::class';
 use Types::Standard qw( Str );
-use Carp qw( croak );
 use Net::Versa::Director::Serializer;
 
 =head1 SYNOPSIS
 
-    use v5.36;
+    use v5.38;
     use Net::Versa::Director;
 
     # to use the username/password basic authentication
@@ -98,21 +98,135 @@ has '+persistent_headers' => (
     },
 );
 
+# around 'do_request' => sub($orig, $self, $method, $uri, $opts) {
+#     use DDP;
+#     warn 'request: ' . np($method) . np($uri) . np($opts);
+#     my $response = $orig->($self, $method, $uri, $opts);
+#     warn 'response: ' .  np $response;
+#     return $response;
+# };
+
+=head1 ERROR handling
+
+All methods throw an exception on error returning the unmodified data from the API
+as a Net::Versa::Director::Exception subclass object which stringifies to an error message.
+
+Currently the Versa Director has multiple different API error formats depending on
+the type of request.
+
+See L<https://docs.versa-networks.com/Management_and_Orchestration/Versa_Director/Director_REST_APIs/Versa_Director_REST_API_Overview#Status_and_Error_Responses>
+for a detailed documentation about the possible error responses.
+
+=head2 OAuth errors
+
+Are thrown as Net::Versa::Director::Exception::OAuth objects and have the following attributes:
+
+    error               => 'invalid_client',
+    error_description   =>'Client authentication failed (e.g., unknown client, no client authentication included, or unsupported authentication method).',
+
+=head2 YANG data model errors
+
+All API endpoints starting with /api/config or /api/operational return this type of error.
+They are thrown as Net::Versa::Director::Exception::Basic objects and have the following attributes:
+
+    code                => 401,
+    description         => "Invalid user name or password.",
+    http_status_code    => 401,
+    message             => "Unauthenticated",
+    more_info           => "http://nms.versa.com/errors/401",
+
+=head2 YANG and relational data model errors
+
+All API endpoints starting with /vnms are thrown as Net::Versa::Director::Exception::VNMS objects:
+
+    error               => "Not Found",
+    exception           => "com.versa.vnms.common.exception.VOAEException",
+    http_status_code    => 404,
+    message             => " device work flow non-existing does not exist ",
+    path                => "/vnms/sdwan/workflow/devices/device/non-existing",
+    timestamp           => 1696574964569,
+
+=head2 other errors
+
+If an error response doesn't conform to any of the above documented types, the exception is thrown
+as Net::Versa::Director::Exception::Other object:
+
+    http_status_code    => 500,
+    message             => "500 Internal Server Error",
+
+=cut
+
+class Net::Versa::Director::Exception {
+    use overload q{""} => 'as_string', fallback => 1;
+}
+class Net::Versa::Director::Exception::OAuth :isa(Net::Versa::Director::Exception) {
+    field $error                :param :reader;
+    field $error_description    :param :reader;
+
+    method as_string {
+        return $error_description;
+    }
+}
+class Net::Versa::Director::Exception::Basic :isa(Net::Versa::Director::Exception) {
+    field $code                 :param :reader;
+    field $description          :param :reader;
+    field $http_status_code     :param :reader;
+    field $message              :param :reader;
+    field $more_info            :param :reader;
+
+    method as_string {
+        return $description;
+    }
+}
+class Net::Versa::Director::Exception::VNMS :isa(Net::Versa::Director::Exception) {
+    field $error                :param :reader;
+    field $exception            :param :reader;
+    field $timestamp            :param :reader;
+    field $http_status_code     :param :reader;
+    field $message              :param :reader;
+    field $path                 :param :reader;
+
+    method as_string {
+        return $message;
+    }
+}
+class Net::Versa::Director::Exception::Other :isa(Net::Versa::Director::Exception) {
+    field $http_status_code     :param :reader;
+    field $message              :param :reader;
+
+    method as_string {
+        return $message;
+    }
+}
+
 sub _error_handler ($self, $res) {
     if (ref $res->data eq 'HASH') {
         if (exists $res->data->{error} && ref $res->data->{error} eq 'HASH') {
-            croak($res->data->{error});
+            if (exists $res->data->{error}->{code}) {
+                die Net::Versa::Director::Exception::Basic->new(
+                    $res->data->{error}->%*,
+                );
+            }
+            die Net::Versa::Director::Exception::VNMS->new(
+                $res->data->{error}->%*,
+            );
         }
-        else {
-            croak($res->data);
+        elsif ($self->_is_oauth && exists $res->data->{error_description}) {
+            die Net::Versa::Director::Exception::OAuth->new(
+                $res->data->%*,
+            );
         }
+
+        die Net::Versa::Director::Exception::VNMS->new(
+            $res->data->%*
+        );
     }
-    # emulate API response
+    # handle undocumented API error responses
     else {
-        croak({
+        die Net::Versa::Director::Exception::Other->new(
             http_status_code    => $res->code,
-            message             => $res->response->decoded_content,
-        });
+            message             => $res->response->status_line,
+        );
     }
 }
 
@@ -151,43 +265,6 @@ sub _delete ($self, $url, $args = {}) {
 
     return 1;
 }
-
-=head1 ERROR handling
-
-All methods throw an exception on error returning the unmodified data from the API
-as hashref.
-
-Currently the Versa Director has to different API error formats depending on
-the type of request.
-
-=head2 authentication errors
-
-The response of an authentication error looks like this:
-
-    {
-        code               => 4001,
-        description        => "Invalid user name or password.",
-        http_status_code   => 401,
-        message            => "Unauthenticated",
-        more_info          => "http://nms.versa.com/errors/4001",
-    }
-
-=head2 YANG data model errors
-
-All API endpoints starting with /api/config or /api/operational return this type of error:
-
-=head2 YANG and relational data model errors
-
-All API endpoints starting with /vnms return this type of error:
-
-    {
-        error               => "Not Found",
-        exception           => "com.versa.vnms.common.exception.VOAEException",
-        http_status_code    => 404,
-        message             => " device work flow non-existing does not exist ",
-        path                => "/vnms/sdwan/workflow/devices/device/non-existing",
-        timestamp           => 1696574964569,
-    }
 
 =head1 METHODS
 
